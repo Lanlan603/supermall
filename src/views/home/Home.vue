@@ -2,18 +2,23 @@
 <template>
   <div id="home">
     <nav-bar class="home-nav"><div slot="center">购物街</div></nav-bar>
+    <tab-control :titles="['流行','新款','精选']" 
+                       @tabClick="tabClick"
+                       ref="tabControl1"
+                       class="tab-control"
+                       v-show="isTabFixed" />
         <scroll class="content"
          ref="scroll"
           :probe-type="3"
           @scroll="contentScroll"
           :pull-up-load="true"
           @pullingUp="loadMore">
-          <home-swiper :banners="banners"/>
+          <home-swiper :banners="banners" @swiperImageLoad="swiperImageLoad" />
           <recommend-view :recommends="recommends"/>
           <feature-view/>
-          <tab-control class="tab-control" 
-                      :titles="['流行','新款','精选']" 
-                      @tabClick="tabClick" />
+          <tab-control :titles="['流行','新款','精选']" 
+                       @tabClick="tabClick"
+                       ref="tabControl2" />
           <goods-list :goods="showGoods" />
         </scroll>
         <back-top @click.native="backClick" v-show="isShowBackTop" />
@@ -28,11 +33,11 @@
   import NavBar from '@/components/common/navbar/NavBar'
   import TabControl from '@/components/content/TabControl/TabControl'
   import GoodsList from '@/components/content/goods/GoodsList'
-
-  import {getHomeMultidata, getHomeGoods} from '@/network/home'
-
   import Scroll from '@/components/common/scroll/Scroll'
   import BackTop from '@/components/content/backTop/BackTop'
+
+  import {getHomeMultidata, getHomeGoods} from '@/network/home'
+  import { itemListenerMixin } from '@/common/mixin'  
 export default {
   data () {
     name: "Home"
@@ -45,7 +50,11 @@ export default {
         'sell': {page: 0, list: []}
       },
       currentType: 'pop',
-      isShowBackTop: false
+      isShowBackTop: false,
+      tabOffsetTop: 0,
+      isTabFixed: false,
+      saveY: 0,
+      itemImgListener: null,
     }
   },
   components: {
@@ -58,6 +67,7 @@ export default {
     Scroll,
     BackTop
   },
+  mixins: [itemListenerMixin],
   created() {
     // 1. 请求多个数据
     this.getHomeMultidata()
@@ -67,10 +77,25 @@ export default {
     this.getHomeGoods('new')
     this.getHomeGoods('sell')
   },
+  mounted() {
+  },
   computed: {
     showGoods() {
       return this.goods[this.currentType].list
     }
+  },
+  destroyed() {
+    console.log('home destroyed');
+  },
+  activated() {
+    this.$refs.scroll.scrollTo(0,this.saveY,0)
+    this.$refs.scroll.refresh()
+  },
+  deactivated() {
+    // 1. 保存Y值
+    this.saveY = this.$refs.scroll.getScrollY()
+    // 2. 取消全局事件监听
+    this.$bus.$off('itemImgLoad', this.itemImgListener)
   },
   methods: {
     // 事件监听相关方法
@@ -86,6 +111,8 @@ export default {
           this.currentType = 'sell'
           break;
       }
+      this.$refs.tabControl1.currentIndex = index
+      this.$refs.tabControl2.currentIndex = index
     },
 
     backClick() {
@@ -94,7 +121,10 @@ export default {
 
     contentScroll(position) {
       // console.log(position);
+      // 判断 BackTop 是否显示
       this.isShowBackTop = (-position.y) > 1000
+      // 判断TabControl是否吸顶
+      this.isTabFixed = (-position.y) > this.tabOffsetTop
     },
 
     loadMore() {
@@ -102,10 +132,14 @@ export default {
       this.getHomeGoods(this.currentType)
     },
 
+    swiperImageLoad() {
+      // TabControl 吸顶效果
+      this.tabOffsetTop = this.$refs.tabControl2.$el.offsetTop
+    },
+
     // 网络请求相关方法
     getHomeMultidata() {
       getHomeMultidata().then(res => {
-      // console.log(res);
       this.banners = res.data.banner.list
       this.recommends = res.data.recommend.list
     })
@@ -117,6 +151,7 @@ export default {
         this.goods[type].list.push(...res.data.list)
         this.goods[type].page += 1
 
+        // 完成上拉加载更多
         this.$refs.scroll.finishPullUp()
       })
     }
@@ -126,25 +161,14 @@ export default {
 
 <style  scoped>
   #home {
-    padding-top: 44px;
     height: 100vh;
     position: relative;
   }
   .home-nav {
-    position: fixed;
-    left: 0;
-    right: 0;
-    top: 0;
-    z-index: 9;
-
     background-color: var(--color-tint);
     color: white;
   }
-  .tab-control {
-    position: sticky;
-    top: 44px;
-    z-index: 2;
-  }
+
   .content {
     /* height: calc(100vh - 93px);
     overflow: hidden;
@@ -156,5 +180,9 @@ export default {
     bottom: 49px;
     left: 0;
     right: 0
+  }
+  .tab-control {
+    position: relative;
+    z-index: 9;
   }
 </style>
